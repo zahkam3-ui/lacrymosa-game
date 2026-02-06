@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Lacrymosa: V1.0 Final</title>
+    <title>Lacrymosa: V2.0 Persistent</title>
     <style>
         body { margin: 0; overflow: hidden; background: #ffb6c1; font-family: 'Courier New', Courier, monospace; touch-action: none; }
         #ui { position: absolute; bottom: 12%; width: 100%; text-align: center; color: white; pointer-events: none; text-shadow: 0px 0px 8px #ff69b4; font-size: 1.4rem; padding: 0 20px; box-sizing: border-box; z-index: 10; transition: opacity 1s; }
@@ -24,8 +24,8 @@
     </div>
     <div id="credits">
         <h1>STARDUST BLOOMED</h1>
-        <p>You turned your tears into a galaxy. ✨</p>
-        <button class="reset-btn" onclick="resetGame()">HEAL AGAIN</button>
+        <p>Your garden survived the void. ✨</p>
+        <button class="reset-btn" onclick="resetGame()">CLEAR MEMORY</button>
     </div>
 
     <script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }</script>
@@ -35,6 +35,178 @@
 
         // --- AUDIO ---
         const audio = new Audio('https://pixabay.com/music/download/7143/?attachment');
+        audio.loop = true;
+        let musicStarted = false;
+        const musicBtn = document.getElementById('music-btn');
+        musicBtn.addEventListener('click', () => {
+            if (audio.paused) { audio.play(); musicBtn.innerText = "MUSIC: ON"; }
+            else { audio.pause(); musicBtn.innerText = "MUSIC: OFF"; }
+        });
+
+        // --- SCENE ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffb6c1); 
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        document.body.appendChild(renderer.domElement);
+
+        const sun = new THREE.PointLight(0xffffff, 2, 50);
+        sun.position.set(5, 10, 5);
+        scene.add(sun, new THREE.AmbientLight(0xffffff, 0.7));
+
+        // --- NOVA RING ---
+        const ringGeo = new THREE.TorusGeometry(0.5, 0.02, 16, 100);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0 });
+        const novaRing = new THREE.Mesh(ringGeo, ringMat);
+        novaRing.rotation.x = Math.PI / 2;
+        scene.add(novaRing);
+
+        // --- WORLD GROUPS ---
+        const worldGroup = new THREE.Group();
+        const flowerGroupParent = new THREE.Group();
+        scene.add(worldGroup);
+        worldGroup.add(flowerGroupParent);
+
+        const cloudMat = new THREE.MeshStandardMaterial({ color: 0xffffff });
+        for(let i=0; i<12; i++) {
+            const part = new THREE.Mesh(new THREE.IcosahedronGeometry(Math.random() * 0.7 + 0.5, 1), cloudMat);
+            part.position.set(Math.random()-0.5, (Math.random()-0.5)*0.3, Math.random()-0.5);
+            worldGroup.add(part);
+        }
+
+        const player = new THREE.Mesh(new THREE.SphereGeometry(0.4, 32, 32), new THREE.MeshStandardMaterial({ color: 0xadd8e6 }));
+        player.position.y = 0.8;
+        scene.add(player);
+
+        const eyeGeo = new THREE.SphereGeometry(0.06, 8, 8);
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+        const eyeL = new THREE.Mesh(eyeGeo, eyeMat); 
+        const eyeR = new THREE.Mesh(eyeGeo, eyeMat); 
+        scene.add(eyeL, eyeR);
+
+        camera.position.set(0, 3, 6);
+        camera.lookAt(0, 0, 0);
+
+        // --- PERSISTENCE LOGIC (NEW V2.0) ---
+        let tearCount = parseInt(localStorage.getItem('lacrymosa_tears')) || 0;
+        let storyPoints = ["The stars are quiet today.", "Let the glitter fall.", "Even your tears can shine.", "Your sadness is a masterpiece.", "The galaxy is in full bloom."];
+        let currentLevel = 0;
+        let isCrying = false, isGameOver = false;
+        const tears = [];
+
+        function spawnFlower(instant = false) {
+            const f = new THREE.Group();
+            const petal = new THREE.Mesh(new THREE.IcosahedronGeometry(0.15, 1), new THREE.MeshStandardMaterial({ color: [0xffffff, 0xffd1dc, 0x9370db, 0xff69b4][Math.floor(Math.random()*4)] }));
+            petal.position.y = 0.5; f.add(petal);
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 0.5 + Math.random() * 1.5;
+            f.position.set(Math.cos(angle)*dist, 0.1, Math.sin(angle)*dist);
+            
+            if (instant) f.scale.set(1,1,1);
+            else f.scale.set(0,0,0);
+            
+            flowerGroupParent.add(f);
+            if (!instant) {
+                const grow = () => { if(f.scale.x < 1) { f.scale.x += 0.03; f.scale.y += 0.03; f.scale.z += 0.03; requestAnimationFrame(grow); } };
+                grow();
+            }
+        }
+
+        // LOAD SAVED STATE
+        function loadSave() {
+            const flowersToSpawn = Math.floor(tearCount / 20);
+            for(let i=0; i<flowersToSpawn; i++) spawnFlower(true);
+            
+            currentLevel = Math.min(Math.floor(tearCount / 80), storyPoints.length - 1);
+            document.getElementById('ui').innerText = storyPoints[currentLevel];
+            
+            if (tearCount > 400) triggerFinale(true);
+            
+            // Adjust background based on level
+            const colors = [0xffb6c1, 0xbf94b1, 0x7f72a1, 0x3f5091, 0x2a0845];
+            scene.background.set(colors[currentLevel]);
+        }
+
+        function triggerFinale(instant = false) {
+            isGameOver = true; isCrying = false;
+            document.getElementById('ui').style.opacity = "0";
+            document.getElementById('credits').classList.add('visible');
+            if (!instant) {
+                novaRing.position.copy(player.position);
+                novaRing.material.opacity = 1;
+            }
+        }
+
+        window.resetGame = () => {
+            localStorage.clear();
+            location.reload(); // Refresh to clear all states
+        };
+
+        // --- INTERACTION ---
+        window.addEventListener('pointerdown', (e) => { 
+            if(!musicStarted && !isGameOver) { audio.play().catch(()=>{}); musicBtn.innerText = "MUSIC: ON"; musicStarted = true; }
+            if(e.target.tagName !== 'BUTTON' && !isGameOver) isCrying = true; 
+        });
+        window.addEventListener('pointerup', () => isCrying = false);
+
+        // --- MAIN LOOP ---
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = Date.now() * 0.001;
+            
+            if (isCrying) {
+                const tear = new THREE.Mesh(new THREE.IcosahedronGeometry(0.07, 0), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xadd8e6 }));
+                tear.position.set(player.position.x + (Math.random()-0.5)*0.2, player.position.y, player.position.z + 0.3);
+                scene.add(tear); tears.push(tear); 
+                
+                tearCount++;
+                localStorage.setItem('lacrymosa_tears', tearCount); // Save to disk
+
+                if (tearCount % 20 === 0) spawnFlower();
+                if (tearCount > (currentLevel + 1) * 80 && currentLevel < storyPoints.length - 1) {
+                    currentLevel++; document.getElementById('ui').innerText = storyPoints[currentLevel];
+                    scene.background.lerp(new THREE.Color(0x2a0845), 0.4);
+                } else if (tearCount > 400 && !isGameOver) triggerFinale();
+            }
+
+            for (let i = tears.length - 1; i >= 0; i--) {
+                tears[i].position.y -= 0.08;
+                if (tears[i].position.y < -0.5) { scene.remove(tears[i]); tears.splice(i, 1); }
+            }
+
+            // Blink & Float
+            player.position.y = 0.8 + Math.sin(time * 2) * 0.05;
+            if (Math.random() > 0.99) eyeL.scale.y = eyeR.scale.y = 0.1;
+            else { eyeL.scale.y = THREE.MathUtils.lerp(eyeL.scale.y, 1, 0.2); eyeR.scale.y = THREE.MathUtils.lerp(eyeR.scale.y, 1, 0.2); }
+            eyeL.position.set(player.position.x + 0.15, player.position.y + 0.05, 0.35);
+            eyeR.position.set(player.position.x - 0.15, player.position.y + 0.05, 0.35);
+
+            if(isGameOver && novaRing.material.opacity > 0) {
+                novaRing.scale.multiplyScalar(1.05);
+                novaRing.material.opacity *= 0.98;
+            }
+
+            worldGroup.rotation.y += 0.003;
+            renderer.render(scene, camera);
+        }
+
+        document.getElementById('screenshot-btn').addEventListener('click', () => {
+            renderer.render(scene, camera);
+            const link = document.createElement('a');
+            link.download = 'my-persistent-garden.png';
+            link.href = renderer.domElement.toDataURL('image/png');
+            link.click();
+        });
+
+        loadSave();
+        animate();
+        window.addEventListener('resize', () => { camera.aspect = window.innerWidth / window.innerHeight; camera.updateProjectionMatrix(); renderer.setSize(window.innerWidth, window.innerHeight); });
+    </script>
+</body>
+</html>
+const audio = new Audio('https://pixabay.com/music/download/7143/?attachment');
         audio.loop = true;
         let musicStarted = false;
         const musicBtn = document.getElementById('music-btn');
